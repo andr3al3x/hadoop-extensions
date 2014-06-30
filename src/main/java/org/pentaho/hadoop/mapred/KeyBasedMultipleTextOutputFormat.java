@@ -6,7 +6,6 @@ import org.apache.hadoop.mapred.lib.MultipleTextOutputFormat;
 
 /**
  * Outputs multiple text files based on the key path
- * NOTE: THIS IS NOT PRODUCTION READY AND IT MUST BE TESTED
  */
 public class KeyBasedMultipleTextOutputFormat extends MultipleTextOutputFormat<Text, Text> {
 
