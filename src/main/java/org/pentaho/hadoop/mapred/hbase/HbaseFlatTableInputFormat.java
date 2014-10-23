@@ -1,6 +1,9 @@
 package org.pentaho.hadoop.mapred.hbase;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
@@ -29,7 +32,7 @@ public class HbaseFlatTableInputFormat implements InputFormat<Text, Text>, JobCo
     private final Log log = LogFactory.getLog(HbaseFlatTableInputFormat.class);
 
     /** The name of the table to read from. */
-    public static final String INPUT_TABLE = "hbase.mapred.inputtable";
+    public static final String SCAN_INPUT_TABLE = "hbase.mapred.inputtable";
 
     /** The number of rows (integer) for caching that will be passed to scanners. */
     public static final String SCAN_CACHEDROWS = "hbase.mapred.scan.cachedrows";
@@ -44,13 +47,23 @@ public class HbaseFlatTableInputFormat implements InputFormat<Text, Text>, JobCo
     public static final String SCAN_TIMERANGE_END = "hbase.mapred.scan.timerange.end";
 
     /** The Constant COLUMN_LIST. */
-    public static final String COLUMN_LIST = "hbase.mapred.tablecolumns";
+    public static final String SCAN_COLUMN_LIST = "hbase.mapred.tablecolumns";
 
-    /** The input columns. */
-    private byte[][] inputColumns;
+    /** The Constant SCAN_COLUMN_DELIMITER. */
+    public static final String SCAN_COLUMN_DELIMITER = "hbase.mapred.outputvaluedelimiter";
+    
+    /** The input column descriptors. */
+    private List<HbaseColumnDescriptor> inputColumnDescriptors;
 
     /** The htable. */
     private HTable htable;
+  
+    /**
+     * Instantiates a new hbase flat table input format.
+     */
+    public HbaseFlatTableInputFormat() {
+        this.inputColumnDescriptors = new ArrayList<HbaseColumnDescriptor>();
+    }
 
     /*
      * (non-Javadoc)
@@ -59,18 +72,20 @@ public class HbaseFlatTableInputFormat implements InputFormat<Text, Text>, JobCo
      */
     @Override
     public void configure(JobConf job) {
-        String tableName = job.get(INPUT_TABLE);
-        String colArg = job.get(COLUMN_LIST);
+        String tableName = job.get(SCAN_INPUT_TABLE);
+        String colArg = job.get(SCAN_COLUMN_LIST);
 
         if (!StringUtils.isBlank(colArg)) {
             String[] colNames = colArg.split(" ");
-            byte[][] m_cols = new byte[colNames.length][];
-            for (int i = 0; i < m_cols.length; i++) {
-                String colN = colNames[i];
-                m_cols[i] = Bytes.toBytes(colN);
+            
+            for (int i = 0; i < colNames.length; i++) {
+                HbaseColumnDescriptor hcd = new HbaseColumnDescriptor(colNames[i]);
+                
+                if(!hcd.isValid())
+                    throw new RuntimeException("invalid column descriptor: " + colNames[i]);
+                
+                inputColumnDescriptors.add(hcd);
             }
-
-            this.inputColumns = m_cols;
         }
 
         try {
@@ -91,10 +106,19 @@ public class HbaseFlatTableInputFormat implements InputFormat<Text, Text>, JobCo
             throws IOException {
 
         TableSplit tableSplit = (TableSplit) inputSplit;
-        int scanRowsCacheSize = Integer.parseInt(job.get(SCAN_CACHEDROWS));
-        HbaseFlatTableRecordReader recordReader = new HbaseFlatTableRecordReader(tableSplit.getStartRow(),
-                tableSplit.getEndRow(), this.htable, scanRowsCacheSize, this.inputColumns);
-
+        
+        int scanRowsCacheSize = Integer.parseInt(StringUtils.defaultIfBlank(job.get(SCAN_CACHEDROWS),"100"));
+        String columnDelimiter = StringUtils.defaultIfBlank(job.get(SCAN_COLUMN_DELIMITER), ";");
+        
+        HbaseFlatTableRecordReader recordReader = new HbaseFlatTableRecordReader();
+        recordReader.setColumnDelimiter(columnDelimiter);
+        recordReader.setStartRow(tableSplit.getStartRow());
+        recordReader.setEndRow(tableSplit.getEndRow());
+        recordReader.setInputColumnDescriptors(this.inputColumnDescriptors);
+        recordReader.setScanRowCacheSize(scanRowsCacheSize);
+        recordReader.setHtable(this.htable);        
+        recordReader.init();
+        
         return recordReader;
     }
 
@@ -114,7 +138,7 @@ public class HbaseFlatTableInputFormat implements InputFormat<Text, Text>, JobCo
             throw new IOException("Expecting at least one region");
         }
 
-        if (this.inputColumns == null || this.inputColumns.length == 0) {
+        if (this.inputColumnDescriptors.isEmpty()) {
             throw new IOException("Expecting at least one column");
         }
 

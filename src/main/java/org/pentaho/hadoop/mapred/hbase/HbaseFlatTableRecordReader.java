@@ -1,12 +1,10 @@
 package org.pentaho.hadoop.mapred.hbase;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.hbase.KeyValue;
 import org.apache.hadoop.hbase.client.HTable;
 import org.apache.hadoop.hbase.client.Result;
 import org.apache.hadoop.hbase.client.ResultScanner;
@@ -26,29 +24,36 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
 
     /** The scanner. */
     private ResultScanner scanner;
-    
-    /** The input columns. */
-    private List<byte[][]> inputColumns;
+
+    /** The input column descriptors. */
+    private List<HbaseColumnDescriptor> inputColumnDescriptors;
+
+    /** The start row. */
+    private byte[] startRow;
+
+    /** The end row. */
+    private byte[] endRow;
+
+    /** The htable. */
+    private HTable htable;
+
+    /** The scan row cache size. */
+    private int scanRowCacheSize;
+
+    /** The column delimiter. */
+    private String columnDelimiter;
 
     /**
-     * Instantiates a new hbase flat table record reader.
+     * Inits the.
      *
-     * @param startRow the start row
-     * @param endRow the end row
-     * @param htable the htable
-     * @param scanRowCacheSize the scan row cache size
-     * @param inputColumns the input columns
      * @throws IOException Signals that an I/O exception has occurred.
      */
-    public HbaseFlatTableRecordReader(byte[] startRow, byte[] endRow, HTable htable, int scanRowCacheSize,
-            byte[][] inputColumns) throws IOException {
-        this.inputColumns = new ArrayList<byte[][]>();
-
+    public void init() throws IOException {
         Scan scan = new Scan(startRow, endRow);
         scan.setCacheBlocks(false);
         scan.setCaching(scanRowCacheSize);
 
-        configureScanWithInputColumns(scan, inputColumns);
+        configureScanWithInputColumns(scan);
 
         this.scanner = htable.getScanner(scan);
     }
@@ -57,19 +62,65 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
      * Configure scan with input columns.
      *
      * @param scan the scan
-     * @param inputColumns the input columns
      */
-    protected void configureScanWithInputColumns(Scan scan, byte[][] inputColumns) {
-        for (byte[] familyAndQualifier : inputColumns) {
-            byte[][] fq = KeyValue.parseColumn(familyAndQualifier);
-            this.inputColumns.add(fq);
-
-            if (fq.length > 1 && fq[1] != null && fq[1].length > 0) {
-                scan.addColumn(fq[0], fq[1]);
-            } else {
-                scan.addFamily(fq[0]);
-            }
+    protected void configureScanWithInputColumns(Scan scan) {
+        for (HbaseColumnDescriptor hcd : inputColumnDescriptors) {
+            scan.addColumn(hcd.getFamily(), hcd.getQualifier());
         }
+    }
+
+    /**
+     * Sets the input column descriptors.
+     *
+     * @param inputColumnDescriptors the new input column descriptors
+     */
+    public void setInputColumnDescriptors(List<HbaseColumnDescriptor> inputColumnDescriptors) {
+        this.inputColumnDescriptors = inputColumnDescriptors;
+    }
+
+    /**
+     * Sets the start row.
+     *
+     * @param startRow the new start row
+     */
+    public void setStartRow(byte[] startRow) {
+        this.startRow = startRow;
+    }
+
+    /**
+     * Sets the end row.
+     *
+     * @param endRow the new end row
+     */
+    public void setEndRow(byte[] endRow) {
+        this.endRow = endRow;
+    }
+
+    /**
+     * Sets the htable.
+     *
+     * @param htable the new htable
+     */
+    public void setHtable(HTable htable) {
+        this.htable = htable;
+    }
+
+    /**
+     * Sets the scan row cache size.
+     *
+     * @param scanRowCacheSize the new scan row cache size
+     */
+    public void setScanRowCacheSize(int scanRowCacheSize) {
+        this.scanRowCacheSize = scanRowCacheSize;
+    }
+
+    /**
+     * Sets the column delimiter.
+     *
+     * @param columnDelimiter the new column delimiter
+     */
+    public void setColumnDelimiter(String columnDelimiter) {
+        this.columnDelimiter = columnDelimiter;
     }
 
     /*
@@ -79,7 +130,7 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
      */
     @Override
     public void close() throws IOException {
-        if(this.scanner != null)
+        if (this.scanner != null)
             this.scanner.close();
     }
 
@@ -131,19 +182,22 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
     @Override
     public boolean next(Text key, Text value) throws IOException {
         Result result = this.scanner.next();
-        
+
         if (result != null) {
             key.set(result.getRow());
             StringBuilder tempValue = new StringBuilder();
+            
+            for (int i = 0; i < inputColumnDescriptors.size(); i++) {
+                HbaseColumnDescriptor hcd = inputColumnDescriptors.get(i);
+                    
+                // TODO: make this work for non-string pentaho types
+                byte[] colVal = result.getValue(hcd.getFamily(), hcd.getQualifier());
 
-            for (byte[][] fq : inputColumns) {
-                byte[] colVal = result.getValue(fq[0], fq[1]);
-                
-                if (tempValue.length() != 0)
-                    tempValue.append("|");
-                
+                if (i > 0)
+                    tempValue.append(this.columnDelimiter);
+
                 if (colVal != null)
-                    tempValue.append(Bytes.toString(colVal));           
+                    tempValue.append(Bytes.toString(colVal));
             }
 
             value.set(tempValue.toString());
