@@ -50,7 +50,7 @@ public class HbaseFlatTableInputFormat implements InputFormat<Text, Text>, JobCo
     public static final String SCAN_COLUMN_LIST = "hbase.mapred.tablecolumns";
 
     /** The Constant SCAN_COLUMN_DELIMITER. */
-    public static final String SCAN_COLUMN_DELIMITER = "hbase.mapred.outputvaluedelimiter";
+    public static final String SCAN_COLUMN_DELIMITER = "hbase.mapred.output.valuedelimiter";
     
     /** The input column descriptors. */
     private List<HbaseColumnDescriptor> inputColumnDescriptors;
@@ -110,12 +110,18 @@ public class HbaseFlatTableInputFormat implements InputFormat<Text, Text>, JobCo
         int scanRowsCacheSize = Integer.parseInt(StringUtils.defaultIfBlank(job.get(SCAN_CACHEDROWS),"100"));
         String columnDelimiter = StringUtils.defaultIfBlank(job.get(SCAN_COLUMN_DELIMITER), ";");
         
+        Long timestamp = null;
+        String timestampStr = job.get(SCAN_TIMESTAMP);
+        if(!StringUtils.isBlank(timestampStr))
+            timestamp = new Long(timestampStr);
+        
         HbaseFlatTableRecordReader recordReader = new HbaseFlatTableRecordReader();
         recordReader.setColumnDelimiter(columnDelimiter);
         recordReader.setStartRow(tableSplit.getStartRow());
         recordReader.setEndRow(tableSplit.getEndRow());
         recordReader.setInputColumnDescriptors(this.inputColumnDescriptors);
         recordReader.setScanRowCacheSize(scanRowsCacheSize);
+        recordReader.setTimestamp(timestamp);
         recordReader.setHtable(this.htable);        
         recordReader.init();
         

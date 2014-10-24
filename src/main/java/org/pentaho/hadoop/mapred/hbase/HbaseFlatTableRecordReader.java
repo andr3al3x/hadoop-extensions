@@ -28,6 +28,9 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
     /** The input column descriptors. */
     private List<HbaseColumnDescriptor> inputColumnDescriptors;
 
+    /** The timestamp. */
+    private Long timestamp;
+
     /** The start row. */
     private byte[] startRow;
 
@@ -43,7 +46,14 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
     /** The column delimiter. */
     private String columnDelimiter;
 
+    /** The value converter. */
     private KettleValueTypeConverter valueConverter;
+
+    /** The total rows. */
+    private long totalRows = 0;
+
+    /** The start time. */
+    private long startTime;
 
     /**
      * Inits the.
@@ -59,7 +69,14 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
 
         configureScanWithInputColumns(scan);
 
+        if (this.timestamp != null)
+            scan.setTimeStamp(timestamp.longValue());
+
         this.scanner = htable.getScanner(scan);
+
+        this.startTime = System.currentTimeMillis();
+
+        log.info("hbase scanner initialized with cache size: " + scanRowCacheSize);
     }
 
     /**
@@ -71,6 +88,8 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
         for (HbaseColumnDescriptor hcd : inputColumnDescriptors) {
             scan.addColumn(hcd.getFamily(), hcd.getQualifier());
         }
+
+        log.info("added " + inputColumnDescriptors.size() + " columns to the hbase scan");
     }
 
     /**
@@ -127,6 +146,15 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
         this.columnDelimiter = columnDelimiter;
     }
 
+    /**
+     * Sets the timestamp.
+     *
+     * @param timestamp the new timestamp
+     */
+    public void setTimestamp(Long timestamp) {
+        this.timestamp = timestamp;
+    }
+
     /*
      * (non-Javadoc)
      * 
@@ -134,8 +162,17 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
      */
     @Override
     public void close() throws IOException {
-        if (this.scanner != null)
+        if (this.scanner != null) {
+            long endTime = System.currentTimeMillis();
+            long totalTime = endTime - this.startTime;
+            long totalTimeSecs = totalTime / 1000;
+            long rowsPerSec = (this.totalRows / totalTimeSecs);
+
             this.scanner.close();
+
+            log.info("hbase scanner closed: Total rows: " + this.totalRows + " Total time: " + totalTimeSecs
+                    + "secs Speed: " + rowsPerSec + "rows/sec");
+        }
     }
 
     /*
@@ -165,7 +202,7 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
      */
     @Override
     public long getPos() throws IOException {
-        return 0;
+        return totalRows;
     }
 
     /*
@@ -196,19 +233,20 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
 
                 if (i > 0)
                     tempValue.append(this.columnDelimiter);
-                
+
                 // get the value if exists and convert to correct type
                 byte[] colVal = result.getValue(hcd.getFamily(), hcd.getQualifier());
                 if (colVal != null) {
                     String convertedColumn = valueConverter.getStringConvertedValue(colVal, hcd.getColumnType());
-                    
-                    if(convertedColumn != null)
+
+                    if (convertedColumn != null)
                         tempValue.append(convertedColumn);
                 }
             }
 
             value.set(tempValue.toString());
 
+            totalRows++;
             return true;
         }
 
