@@ -1,5 +1,7 @@
 package org.pentaho.hadoop.mapred.hbase;
 
+import org.apache.commons.logging.Log;
+import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.hbase.util.Bytes;
 
 /**
@@ -7,6 +9,8 @@ import org.apache.hadoop.hbase.util.Bytes;
  */
 public class HbaseColumnDescriptor {
 
+    private final Log log = LogFactory.getLog(HbaseColumnDescriptor.class);
+    
     /**
      * The Enum HbaseColumnType.
      */
@@ -46,13 +50,13 @@ public class HbaseColumnDescriptor {
 
             if (columnType.toLowerCase().equals(INTEGER.type))
                 return INTEGER;
-
+            
             return null;
         }
     }
 
     /** The descriptor delimiter. */
-    private static String DESCRIPTOR_DELIMITER = ":";
+    private final static String DESCRIPTOR_DELIMITER = ":";
 
     /** The family. */
     private byte[] family = null;
@@ -71,13 +75,13 @@ public class HbaseColumnDescriptor {
     public HbaseColumnDescriptor(String descriptor) {
         String[] splitDescriptor = descriptor.split(DESCRIPTOR_DELIMITER);
 
-        if (splitDescriptor.length == 2) {
+        if (splitDescriptor.length >= 2) {
             this.family = Bytes.toBytes(splitDescriptor[0]);
             this.qualifier = Bytes.toBytes(splitDescriptor[1]);
         }
 
-        if (splitDescriptor.length == 3) {
-            this.columnType = HbaseColumnType.getColumnType(splitDescriptor[3]);
+        if (splitDescriptor.length >= 3) {
+            this.columnType = HbaseColumnType.getColumnType(splitDescriptor[2]);
         }
     }
 
@@ -137,6 +141,6 @@ public class HbaseColumnDescriptor {
      * @return true, if is valid
      */
     public boolean isValid() {
-        return (this.family != null) && (this.qualifier != null);
+        return (this.family != null) && (this.qualifier != null) && (this.columnType != null);
     }
 }

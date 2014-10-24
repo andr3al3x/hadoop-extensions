@@ -43,12 +43,16 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
     /** The column delimiter. */
     private String columnDelimiter;
 
+    private KettleValueTypeConverter valueConverter;
+
     /**
      * Inits the.
      *
      * @throws IOException Signals that an I/O exception has occurred.
      */
     public void init() throws IOException {
+        valueConverter = new KettleValueTypeConverter();
+
         Scan scan = new Scan(startRow, endRow);
         scan.setCacheBlocks(false);
         scan.setCaching(scanRowCacheSize);
@@ -186,18 +190,21 @@ public class HbaseFlatTableRecordReader implements RecordReader<Text, Text> {
         if (result != null) {
             key.set(result.getRow());
             StringBuilder tempValue = new StringBuilder();
-            
+
             for (int i = 0; i < inputColumnDescriptors.size(); i++) {
                 HbaseColumnDescriptor hcd = inputColumnDescriptors.get(i);
-                    
-                // TODO: make this work for non-string pentaho types
-                byte[] colVal = result.getValue(hcd.getFamily(), hcd.getQualifier());
 
                 if (i > 0)
                     tempValue.append(this.columnDelimiter);
-
-                if (colVal != null)
-                    tempValue.append(Bytes.toString(colVal));
+                
+                // get the value if exists and convert to correct type
+                byte[] colVal = result.getValue(hcd.getFamily(), hcd.getQualifier());
+                if (colVal != null) {
+                    String convertedColumn = valueConverter.getStringConvertedValue(colVal, hcd.getColumnType());
+                    
+                    if(convertedColumn != null)
+                        tempValue.append(convertedColumn);
+                }
             }
 
             value.set(tempValue.toString());
